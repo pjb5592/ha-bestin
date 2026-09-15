@@ -8,7 +8,7 @@ import socket
 from typing import cast
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_PORT, CONF_USERNAME
+from homeassistant.const import CONF_HOST, CONF_PORT, CONF_USERNAME
 from homeassistant.core import HomeAssistant, Event, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
@@ -27,7 +27,6 @@ from .const import (
 )
 from .center import BestinCenterAPI
 from .controller import BestinController
-from .until import check_ip_or_serial
 
 
 class ConnectionManager:
@@ -270,27 +269,32 @@ class BestinHub:
         return SMART_HOME_2
     
     @property
+    def is_local(self) -> bool:
+        """Check if this hub is a local (serial/socket RS485) connection."""
+        return CONF_HOST in self.entry.data
+
+    @property
     def is_polling(self) -> bool:
         """Check if the hub is in polling mode."""
-        if check_ip_or_serial(self.hub_id):
-            return False
-        else:
-            return True
+        return not self.is_local
 
     @property
     def wp_version(self) -> str:
         """Get the WP version."""
-        if check_ip_or_serial(self.hub_id):
+        if self.is_local:
             return f"{self.gw_type}-generation"
         else:
             return self.cntr_version
 
     def conn_str(self, host: str | None, port: int | None) -> str:
         """Generate the connection string."""
-        host = getattr(self, "hub_id", host)
-        if not re.match(r"/dev/tty(USB|AMA)\d+", host):
-            return f"{host}:{str(getattr(self, CONF_PORT, port))}"
-        return host
+        if host is None and self.entry is not None:
+            host = self.entry.data.get(CONF_HOST)
+        if port is None:
+            port = self.port
+        if re.match(r"COM\d+|/dev/tty\w+", str(host)):
+            return str(host)
+        return f"{host}:{port}"
     
     async def determine_gateway_mode(self) -> None:
         """Determine the gateway mode."""

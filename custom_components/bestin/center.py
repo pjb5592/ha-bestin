@@ -40,7 +40,6 @@ from .const import (
     SPEED_STR_LOW,
     SPEED_STR_MEDIUM,
     SPEED_STR_HIGH,
-    MAIN_DEVICES,
     DEVICE_PLATFORM_MAP,
     PLATFORM_SIGNAL_MAP,
     DeviceProfile,
@@ -438,11 +437,7 @@ class BestinCenterAPI(CenterAPIv2):
         if sub_id and not sub_id.isdigit():
             device_type = f"{device_type}:{''.join(filter(str.isalpha, sub_id))}"
         
-        if device_type not in MAIN_DEVICES:
-            uid_suffix = f"-{self.get_short_hash(self.hub_id)}"
-        else:
-            uid_suffix = ""
-        unique_id = f"{device_id}{uid_suffix}"
+        unique_id = f"{device_id}-{self.get_short_hash(self.hub_id)}"
 
         if device_id not in self.devices:
             device_info = DeviceInfo(

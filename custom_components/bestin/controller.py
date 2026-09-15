@@ -22,7 +22,6 @@ from .const import (
     BRAND_PREFIX,
     PRESET_NV,
     PRESET_NONE,
-    MAIN_DEVICES,
     DEVICE_PLATFORM_MAP,
     PLATFORM_SIGNAL_MAP,
     SPEED_INT_LOW,
@@ -345,11 +344,7 @@ class BestinController:
         if device_type not in ["energy"] and sub_id and not sub_id.isdigit():
             device_type = f"{device_type}:{''.join(filter(str.isalpha, sub_id))}"
         
-        if device_type not in MAIN_DEVICES:
-            uid_suffix = f"-{self.hub_id}"
-        else:
-            uid_suffix = ""
-        unique_id = f"{device_id}{uid_suffix}"
+        unique_id = f"{device_id}-{self.hub_id}"
 
         if device_id not in self.devices:
             device_info = DeviceInfo(
