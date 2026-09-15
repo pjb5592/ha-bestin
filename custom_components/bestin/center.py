@@ -252,6 +252,9 @@ class CenterAPIv2:
                     else:
                         units = resp["units"]
                     
+                    is_common = feature_name in ["light", "smartlight", "livinglight", "gas", "doorlock"]
+                    parse_func = getattr(self, f"_parse_{feature_name}_status", None)
+
                     for unit in units:
                         if feature_name == "smartlight":
                             unit_last = unit["unit"]
@@ -264,10 +267,10 @@ class CenterAPIv2:
                             unit_last = unit["unit"][-1]
                             unit_state = unit["state"]
 
-                        if feature_name in ["light", "smartlight", "livinglight", "gas", "doorlock"]:
+                        if is_common:
                             self._parse_common_status(feature_name, room_id, unit_last, unit_state)
-                        if hasattr(self, name := f"_parse_{feature_name}_status"):
-                            getattr(self, name)(room_id, unit_last, unit_state)
+                        if parse_func is not None:
+                            parse_func(room_id, unit_last, unit_state)
                 else:
                     LOGGER.error(f"Failed to get {feature_name} status: {resp}")
         except Exception as ex:
@@ -641,15 +644,16 @@ class BestinCenterAPI(CenterAPIv2):
                 if not status_infos:
                     LOGGER.warning(f"No status info found for {device_type}")
                     return
-                unit_statuses = [
-                    (info.attrib["unit_num"], info.attrib["unit_status"])
-                    for info in status_infos
-                ]
-                for unit_num, unit_status in unit_statuses:
-                    if device_type in ["light", "livinglight", "gas", "doorlock"]:
-                        self._parse_common_status(device_type, device_number, unit_num[-1], unit_status)
-                    if hasattr(self, name := f"_parse_{device_type}_status"):
-                        getattr(self, name)(device_number, unit_num[-1], unit_status)
+                is_common = device_type in ["light", "livinglight", "gas", "doorlock"]
+                parse_func = getattr(self, f"_parse_{device_type}_status", None)
+
+                for info in status_infos:
+                    unit_num = info.attrib["unit_num"][-1]
+                    unit_status = info.attrib["unit_status"]
+                    if is_common:
+                        self._parse_common_status(device_type, device_number, unit_num, unit_status)
+                    if parse_func is not None:
+                        parse_func(device_number, unit_num, unit_status)
         except Exception as ex:
             LOGGER.error(f"Error getting status for {device_type}: {ex}")
     

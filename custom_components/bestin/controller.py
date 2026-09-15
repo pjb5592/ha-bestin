@@ -95,6 +95,17 @@ class BestinController:
         self.tasks: list[asyncio.Task] = []
         self.timestamp = 0
 
+        self._state_parsers: dict[str, Callable] = {
+            "general": self.parse_state_general,
+            "gen2": self.parse_state_gen2,
+            "aio": self.parse_state_aio,
+        }
+        self._packet10_parsers: dict[int, tuple[Callable, str]] = {
+            0x31: (self.parse_gas, "gas"),
+            0x41: (self.parse_doorlock, "doorlock"),
+            0x61: (self.parse_fan, "fan"),
+        }
+
     async def start(self):
         """Start the controller tasks"""
         self.tasks = [
@@ -130,23 +141,18 @@ class BestinController:
             await self.connection.send(packet, interval)
 
     def calculate_checksum(self, packet: bytearray) -> int:
-        """Calculate the checksum for a packet"""
-        checksum = 3
-        for i in range(len(packet) - 1):
-            checksum ^= packet[i]
-            checksum = (checksum + 1) & 0xFF
-        return checksum
-    
-    def verify_checksum(self, packet: bytes) -> bool:
-        """Verify the checksum of a packet"""
-        if len(packet) < 6:
-            return False
-        
+        """Calculate the checksum for a packet (last byte is ignored)"""
         checksum = 3
         for byte in packet[:-1]:
             checksum ^= byte
             checksum = (checksum + 1) & 0xFF
-        return checksum == packet[-1]
+        return checksum
+
+    def verify_checksum(self, packet: bytes) -> bool:
+        """Verify the checksum of a packet"""
+        if len(packet) < 6:
+            return False
+        return self.calculate_checksum(packet) == packet[-1]
 
     def get_devices_from_domain(self, domain: str) -> list:
         """Get devices from a specific domain"""
@@ -459,11 +465,11 @@ class BestinController:
         else:
             iterations = (2, 2)
 
+        dc_value = int.from_bytes(packet[12:14], 'big') / 10.0
+        state_general["light"]["dcvalue"] = dc_value
         for i in range(iterations[0]):
             light_state = bool(packet[6] & (0x01 << i))
-            dc_value = int.from_bytes(packet[12:14], 'big') / 10.0
             state_general["light"][str(i)] = light_state
-            state_general["light"][f"dcvalue"] = dc_value
 
         for i in range(iterations[1]): 
             idx = 14 + 2 * i
@@ -634,9 +640,7 @@ class BestinController:
                 (self.gateway_type == "AIO" and packet_len in [20, 22]) or
                 (self.gateway_type == "Gen2" and packet_len in [59, 72, 98, 150])
             ):
-                room_id, device_state = getattr(
-                    self, f"parse_state_{self.gateway_type}".lower()
-                )(packet)
+                room_id, device_state = self._state_parsers[self.gateway_type.lower()](packet)
                 for device, state in device_state.items():
                     device_id = f"{device}_{room_id}"
                     self.set_device(device_id, state, is_sub=True)
@@ -646,13 +650,8 @@ class BestinController:
                     device_id = f"energy_{room_id}"
                     self.set_device(device_id, state, is_sub=True)
         elif packet_len == 10 and command != 0x00:
-            parser_mapping = {
-                0x31: (self.parse_gas, "gas"),
-                0x41: (self.parse_doorlock, "doorlock"),
-                0x61: (self.parse_fan, "fan"),
-            }
-            if header in parser_mapping:
-                parse_func, device_type = parser_mapping[header]
+            if header in self._packet10_parsers:
+                parse_func, device_type = self._packet10_parsers[header]
                 room_id, device_state = parse_func(packet)
                 device_id = f"{device_type}_{room_id}"
                 self.set_device(device_id, device_state)
