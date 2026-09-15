@@ -97,6 +97,7 @@ class ConnectionManager:
         if self.writer is not None:
             self.writer.close()
             await self.writer.wait_closed()
+            self.writer = None
 
         current_time = time.time()
         if self.next_attempt_time and current_time < self.next_attempt_time:

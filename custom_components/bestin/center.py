@@ -389,7 +389,7 @@ class BestinCenterAPI(CenterAPIv2):
         parts = device_id.split("_")
         device_type = parts[1]
         room_id = int(parts[2])
-        pos_id = 0
+        pos_id = None
         sub_type = None
 
         if len(parts) > 3:
@@ -407,14 +407,16 @@ class BestinCenterAPI(CenterAPIv2):
             if device_type == "doorlock":
                 LOGGER.warning("For doorlock, command is not supported.")
             else:
-                unit_id = f"{sub_type}{pos_id or room_id}" \
-                    if kwargs else f"{device_type}{pos_id or ''}"
+                pos_or_room = pos_id if pos_id is not None else room_id
+                unit_id = f"{sub_type}{pos_or_room}" \
+                    if kwargs else f"{device_type}{pos_id if pos_id is not None else ''}"
                 await self.request_home_device(device_type, room_id, unit_id, value)
         else:
             if device_type == "elevator":
                 await self.elevator_call_request()
             else:
-                unit_id = f"{sub_type}{pos_id or room_id}" if kwargs else f"{device_type}1"
+                pos_or_room = pos_id if pos_id is not None else room_id
+                unit_id = f"{sub_type}{pos_or_room}" if kwargs else f"{device_type}1"
                 await self.request_feature_command(device_type, room_id, unit_id, value)
 
     def get_devices_from_domain(self, domain: str) -> list:

@@ -68,11 +68,11 @@ VALUE_CONVERSION = {
     "gas:total": lambda val, _: round(val / 1000, 2),
     "gas:realtime": lambda val, _: val / 10,
     "heat:total": lambda val, _: round(val / 1000, 2),
-    "heat:realtime": lambda val, wp_ver: val if wp_ver == "General" else val / 1000,
+    "heat:realtime": lambda val, wp_ver: val if wp_ver.startswith("General") else val / 1000,
     "hotwater:total": lambda val, _: round(val / 1000, 2),
-    "hotwater:realtime": lambda val, wp_ver: val if wp_ver == "General" else val / 1000,
+    "hotwater:realtime": lambda val, wp_ver: val if wp_ver.startswith("General") else val / 1000,
     "water:total": lambda val, _: round(val / 1000, 2),
-    "water:realtime": lambda val, wp_ver: val if wp_ver == "General" else val / 1000,
+    "water:realtime": lambda val, wp_ver: val if wp_ver.startswith("General") else val / 1000,
 }
 
 

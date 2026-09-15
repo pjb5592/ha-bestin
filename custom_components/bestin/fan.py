@@ -93,7 +93,7 @@ class BestinFan(BestinDevice, FanEntity):
     def percentage(self) -> Optional[int]:
         """Return the current speed percentage."""
         speed = self._device_info.state[WIND_SPEED]
-        if speed == STATE_OFF:
+        if not speed or speed == STATE_OFF:
             return 0
         return ordered_list_item_to_percentage(self._speed_list, speed)
     

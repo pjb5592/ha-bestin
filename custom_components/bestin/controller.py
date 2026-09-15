@@ -508,13 +508,12 @@ class BestinController:
             brightness, color_temp = packet[l_idx + 1], packet[l_idx + 2]
             dc_value = int.from_bytes(packet[l_idx + 8:l_idx + 10], byteorder="big") / 10
 
-            if brightness and color_temp:
-                state_gen2["light"][str(i)] = {
-                    ATTR_STATE: packet[l_idx] == 0x01,
-                    ColorMode.BRIGHTNESS: brightness,
-                    ColorMode.COLOR_TEMP: color_temp,
-                }
-                state_gen2["light"][f"dcvalue_{str(i)}"] = dc_value
+            state_gen2["light"][str(i)] = {
+                ATTR_STATE: packet[l_idx] == 0x01,
+                ColorMode.BRIGHTNESS: brightness,
+                ColorMode.COLOR_TEMP: color_temp,
+            }
+            state_gen2["light"][f"dcvalue_{str(i)}"] = dc_value
             l_idx += 13
 
         for i in range(o_count):
@@ -593,16 +592,17 @@ class BestinController:
 
     async def send_packet_queue(self, queue: dict):
         """Send a packet from the queue"""
-        command_packet = getattr(self, f"make_{queue['device_type']}_packet", None)(
+        packet_maker = getattr(self, f"make_{queue['device_type']}_packet", None)
+        if packet_maker is None:
+            LOGGER.error("No packet maker for device '%s'", queue["device_type"])
+            return
+        command_packet = packet_maker(
             queue["timestamp"],
             queue["room_id"],
             queue["pos_id"],
             queue["sub_type"],
             queue["value"]
         )
-        if command_packet is None:
-            LOGGER.error("No packet maker for device '%s'", queue["device_type"])
-            return
         queue["command_packet"] = command_packet
 
         LOGGER.info(
@@ -693,7 +693,8 @@ class BestinController:
 
                     if await self.queue.size() > 0:
                         queue_item = await self.queue.get()
-                        self.validate_response(received_data, queue_item)
+                        if queue_item and queue_item.get("command_packet") is not None:
+                            self.validate_response(received_data, queue_item)
             except Exception as ex:
                 LOGGER.error(f"Failed to process incoming data: {ex}", exc_info=True)
 
