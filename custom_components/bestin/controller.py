@@ -19,7 +19,6 @@ from .const import (
     LOGGER,
     DEFAULT_MAX_SEND_RETRY,
     DEFAULT_PACKET_VIEWER,
-    BRAND_PREFIX,
     PRESET_NV,
     PRESET_NONE,
     DEVICE_PLATFORM_MAP,
@@ -28,8 +27,8 @@ from .const import (
     SPEED_INT_MEDIUM,
     SPEED_INT_HIGH,
     DeviceProfile,
-    DeviceInfo,
 )
+from .until import build_device, resolve_device_platform
 
 ENERGY_BYTE_RANGE = {
     "electric": (slice(8, 12), slice(8, 12)),
@@ -38,6 +37,10 @@ ENERGY_BYTE_RANGE = {
     "hotwater": (slice(24, 28), slice(24, 28)),
     "water": (slice(17, 20), slice(17, 20)),
 }
+
+_STATE_COMMANDS = frozenset({0x81, 0x82, 0x91, 0x92, 0xB2})
+_FAN_SPEED_LIST = [SPEED_INT_LOW, SPEED_INT_MEDIUM, SPEED_INT_HIGH]
+_FAN_PRESET_MODES = [PRESET_NV, PRESET_NONE]
 
 
 class AsyncQueue:
@@ -94,6 +97,7 @@ class BestinController:
         self.tasks: list[asyncio.Task] = []
         self.timestamp = 0
 
+        self._gateway_type_lower = self.gateway_type.lower()
         self._state_parsers: dict[str, Callable] = {
             "general": self.parse_state_general,
             "gen2": self.parse_state_gen2,
@@ -103,6 +107,14 @@ class BestinController:
             0x31: (self.parse_gas, "gas"),
             0x41: (self.parse_doorlock, "doorlock"),
             0x61: (self.parse_fan, "fan"),
+        }
+        self._packet_makers: dict[str, Callable] = {
+            "light": self.make_light_packet,
+            "outlet": self.make_outlet_packet,
+            "thermostat": self.make_thermostat_packet,
+            "gas": self.make_gas_packet,
+            "doorlock": self.make_doorlock_packet,
+            "fan": self.make_fan_packet,
         }
 
     async def start(self):
@@ -331,37 +343,10 @@ class BestinController:
     
     def initial_device(self, device_id: str, sub_id: str | None, state: Any) -> dict:
         """Initialize a device"""
-        device_type, device_room = device_id.split("_")
-    
-        did_suffix = f"_{sub_id}" if sub_id else ""
-        device_id = f"{BRAND_PREFIX}_{device_id}{did_suffix}"
-        if sub_id:
-            sub_id_parts = sub_id.split("_")
-            device_name = f"{device_type} {device_room} {' '.join(sub_id_parts)}".title()
-        else:
-            device_name = f"{device_type} {device_room}".title()
-        
-        if device_type not in ["energy"] and sub_id and not sub_id.isdigit():
-            device_type = f"{device_type}:{''.join(filter(str.isalpha, sub_id))}"
-        
-        unique_id = f"{device_id}-{self.hub_id}"
+        return build_device(
+            device_id, sub_id, state, self.hub_id, self.devices, self.enqueue_command
+        )
 
-        if device_id not in self.devices:
-            device_info = DeviceInfo(
-                device_type=device_type,
-                name=device_name,
-                room=device_room,
-                state=state,
-                device_id=device_id,
-            )
-            self.devices[device_id] = DeviceProfile(
-                enqueue_command=self.enqueue_command,
-                domain=DEVICE_PLATFORM_MAP[device_type],
-                unique_id=unique_id,
-                info=device_info,
-            )
-        return self.devices[device_id]
-    
     def set_device(self, device_id: str, state: Any, is_sub: bool = False):
         """Set the state of a device"""
         device_type, device_room = device_id.split("_")
@@ -369,17 +354,12 @@ class BestinController:
         if device_type not in DEVICE_PLATFORM_MAP:
             LOGGER.error(f"Unsupported device type '{device_type}' in '{device_room}'")
             return
-        
+
         sub_states = state.items() if is_sub else [(None, state)]
         for sub_id, sub_state in sub_states:
             device = self.initial_device(device_id, sub_id, sub_state)
+            _, device_platform = resolve_device_platform(device_type, sub_id)
 
-            if device_type not in ["energy"] and sub_id and not sub_id.isdigit():
-                format_device = f"{device_type}:{''.join(filter(str.isalpha, sub_id))}"
-                device_platform = DEVICE_PLATFORM_MAP[format_device]
-            else:
-                device_platform = DEVICE_PLATFORM_MAP[device_type]
-            
             device_uid = device.unique_id
             device_info = device.info
             if device_uid not in self.entity_groups.get(device_platform, []):
@@ -444,8 +424,8 @@ class BestinController:
         fan_state = {
             ATTR_STATE: bool(packet[5] & 0x01),
             WIND_SPEED: packet[6],
-            "speed_list": [SPEED_INT_LOW, SPEED_INT_MEDIUM, SPEED_INT_HIGH],
-            ATTR_PRESET_MODES: [PRESET_NV, PRESET_NONE],
+            "speed_list": _FAN_SPEED_LIST,
+            ATTR_PRESET_MODES: _FAN_PRESET_MODES,
             ATTR_PRESET_MODE: preset_mode,
         }
         return room_id, fan_state
@@ -592,7 +572,7 @@ class BestinController:
 
     async def send_packet_queue(self, queue: dict):
         """Send a packet from the queue"""
-        packet_maker = getattr(self, f"make_{queue['device_type']}_packet", None)
+        packet_maker = self._packet_makers.get(queue["device_type"])
         if packet_maker is None:
             LOGGER.error("No packet maker for device '%s'", queue["device_type"])
             return
@@ -625,7 +605,7 @@ class BestinController:
         elif packet_len == 10:
             self.timestamp = packet[3]
 
-        if packet_len != 10 and command in [0x81, 0x82, 0x91, 0x92, 0xB2]:
+        if packet_len != 10 and command in _STATE_COMMANDS:
             if header == 0x28:
                 room_id, device_state = self.parse_thermostat(packet)
                 device_id = f"thermostat_{room_id}"
@@ -635,7 +615,7 @@ class BestinController:
                 (self.gateway_type == "AIO" and packet_len in [20, 22]) or
                 (self.gateway_type == "Gen2" and packet_len in [59, 72, 98, 150])
             ):
-                room_id, device_state = self._state_parsers[self.gateway_type.lower()](packet)
+                room_id, device_state = self._state_parsers[self._gateway_type_lower](packet)
                 for device, state in device_state.items():
                     device_id = f"{device}_{room_id}"
                     self.set_device(device_id, state, is_sub=True)
@@ -650,9 +630,6 @@ class BestinController:
                 room_id, device_state = parse_func(packet)
                 device_id = f"{device_type}_{room_id}"
                 self.set_device(device_id, device_state)
-        elif command not in [0x00, 0x11, 0x21, 0xA1]:
-            pass
-            #LOGGER.warning(f"Unknown device packet: {packet.hex()}")
     
     async def handle_packet_queue(self, queue: dict):
         """Handle a packet from the queue"""

@@ -13,8 +13,7 @@ from homeassistant.components.fan import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import STATE_ON, STATE_OFF, ATTR_STATE, WIND_SPEED
-from homeassistant.core import callback, HomeAssistant
-from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util.percentage import (
     ordered_list_item_to_percentage,
@@ -27,8 +26,7 @@ from .const import (
     NEW_FAN,
     PRESET_NV,
 )
-from .device import BestinDevice
-from .hub import BestinHub
+from .device import BestinDevice, setup_platform_entry
 
 
 async def async_setup_entry(
@@ -37,29 +35,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> bool:
     """Setup fan platform."""
-    hub: BestinHub = BestinHub.get_hub(hass, entry)
-    hub.entity_groups[FAN_DOMAIN] = set()
-
-    @callback
-    def async_add_fan(devices=None):
-        if devices is None:
-            devices = hub.api.get_devices_from_domain(FAN_DOMAIN)
-
-        entities = [
-            BestinFan(device, hub) 
-            for device in devices 
-            if device.unique_id not in hub.entity_groups[FAN_DOMAIN]
-        ]
-
-        if entities:
-            async_add_entities(entities)
-
-    entry.async_on_unload(
-        async_dispatcher_connect(
-            hass, hub.async_signal_new_device(NEW_FAN), async_add_fan
-        )
-    )
-    async_add_fan()
+    setup_platform_entry(hass, entry, async_add_entities, FAN_DOMAIN, NEW_FAN, BestinFan)
 
 
 class BestinFan(BestinDevice, FanEntity):

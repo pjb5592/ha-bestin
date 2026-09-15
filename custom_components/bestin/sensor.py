@@ -8,19 +8,17 @@ from homeassistant.components.sensor import (
     SensorDeviceClass
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 from homeassistant.const import (
     UnitOfEnergy,
     UnitOfPower,
     UnitOfVolume,
     UnitOfVolumeFlowRate
 )
-from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import NEW_SENSOR
-from .device import BestinDevice
-from .hub import BestinHub
+from .device import BestinDevice, setup_platform_entry
 
 DEVICE_ICON = {
     "light:dcvalue": "mdi:flash",
@@ -93,29 +91,9 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> bool:
     """Setup sensor platform."""
-    hub: BestinHub = BestinHub.get_hub(hass, entry)
-    hub.entity_groups[DOMAIN_SENSOR] = set()
-
-    @callback
-    def async_add_sensor(devices=None):
-        if devices is None:
-            devices = hub.api.get_devices_from_domain(DOMAIN_SENSOR)
-
-        entities = [
-            BestinSensor(device, hub) 
-            for device in devices 
-            if device.unique_id not in hub.entity_groups[DOMAIN_SENSOR]
-        ]
-
-        if entities:
-            async_add_entities(entities)
-
-    entry.async_on_unload(
-        async_dispatcher_connect(
-            hass, hub.async_signal_new_device(NEW_SENSOR), async_add_sensor
-        )
+    setup_platform_entry(
+        hass, entry, async_add_entities, DOMAIN_SENSOR, NEW_SENSOR, BestinSensor
     )
-    async_add_sensor()
 
 
 class BestinSensor(BestinDevice, SensorEntity):

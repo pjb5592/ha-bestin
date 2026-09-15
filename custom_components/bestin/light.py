@@ -13,13 +13,11 @@ from homeassistant.components.light import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import STATE_ON, STATE_OFF, ATTR_STATE
-from homeassistant.core import callback, HomeAssistant
-from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import CONF_VERSION, NEW_LIGHT
-from .device import BestinDevice
-from .hub import BestinHub
+from .device import BestinDevice, setup_platform_entry
 
 
 async def async_setup_entry(
@@ -28,29 +26,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> bool:
     """Setup light platform."""
-    hub: BestinHub = BestinHub.get_hub(hass, entry)
-    hub.entity_groups[LIGHT_DOMAIN] = set()
-
-    @callback
-    def async_add_light(devices=None):
-        if devices is None:
-            devices = hub.api.get_devices_from_domain(LIGHT_DOMAIN)
-
-        entities = [
-            BestinLight(device, hub) 
-            for device in devices 
-            if device.unique_id not in hub.entity_groups[LIGHT_DOMAIN]
-        ]
-        
-        if entities:
-            async_add_entities(entities)
-
-    entry.async_on_unload(
-        async_dispatcher_connect(
-            hass, hub.async_signal_new_device(NEW_LIGHT), async_add_light
-        )
-    )
-    async_add_light()
+    setup_platform_entry(hass, entry, async_add_entities, LIGHT_DOMAIN, NEW_LIGHT, BestinLight)
 
 
 class BestinLight(BestinDevice, LightEntity):

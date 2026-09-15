@@ -8,12 +8,11 @@ from homeassistant.components.switch import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import STATE_ON, STATE_OFF
-from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import CONF_VERSION, NEW_SWITCH
-from .device import BestinDevice
+from .device import BestinDevice, setup_platform_entry
 from .hub import BestinHub
 
 DEVICE_ICON = {
@@ -33,29 +32,9 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> bool:
     """Setup switch platform."""
-    hub: BestinHub = BestinHub.get_hub(hass, entry)
-    hub.entity_groups[SWITCH_DOMAIN] = set()
-
-    @callback
-    def async_add_switch(devices=None):
-        if devices is None:
-            devices = hub.api.get_devices_from_domain(SWITCH_DOMAIN)
-
-        entities = [
-            BestinSwitch(device, hub) 
-            for device in devices 
-            if device.unique_id not in hub.entity_groups[SWITCH_DOMAIN]
-        ]
-
-        if entities:
-            async_add_entities(entities)
-
-    entry.async_on_unload(
-        async_dispatcher_connect(
-            hass, hub.async_signal_new_device(NEW_SWITCH), async_add_switch
-        )
+    setup_platform_entry(
+        hass, entry, async_add_entities, SWITCH_DOMAIN, NEW_SWITCH, BestinSwitch
     )
-    async_add_switch()
 
 
 class BestinSwitch(BestinDevice, SwitchEntity):

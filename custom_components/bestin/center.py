@@ -33,7 +33,6 @@ from homeassistant.const import (
 
 from .const import (
     LOGGER,
-    BRAND_PREFIX,
     SMART_HOME_1,
     CONF_SESSION,
     DEFAULT_SCAN_INTERVAL,
@@ -43,8 +42,8 @@ from .const import (
     DEVICE_PLATFORM_MAP,
     PLATFORM_SIGNAL_MAP,
     DeviceProfile,
-    DeviceInfo,
 )
+from .until import build_device, resolve_device_platform
 
 
 class CenterAPIv2:
@@ -252,7 +251,7 @@ class CenterAPIv2:
                         units = resp["units"]
                     
                     is_common = feature_name in ["light", "smartlight", "livinglight", "gas", "doorlock"]
-                    parse_func = getattr(self, f"_parse_{feature_name}_status", None)
+                    parse_func = self._status_parsers.get(feature_name)
 
                     for unit in units:
                         if feature_name == "smartlight":
@@ -349,6 +348,13 @@ class BestinCenterAPI(CenterAPIv2):
         self.last_update_time: datetime = datetime.now()
         self.last_sess_refresh: datetime = datetime.now()
 
+        self._status_parsers: dict[str, Callable] = {
+            "electric": self._parse_electric_status,
+            "thermostat": self._parse_thermostat_status,
+            "temper": self._parse_temper_status,
+            "ventil": self._parse_ventil_status,
+        }
+
     def get_short_hash(self, id: str) -> str:
         """Generate a short hash from the given ID."""
         hash_object = hashlib.sha256(id.encode()).digest()
@@ -426,36 +432,10 @@ class BestinCenterAPI(CenterAPIv2):
 
     def initial_device(self, device_id: str, sub_id: str | None, state: Any) -> dict:
         """Initialize a device with given parameters."""
-        device_type, device_room = device_id.split("_")
-    
-        did_suffix = f"_{sub_id}" if sub_id else ""
-        device_id = f"{BRAND_PREFIX}_{device_id}{did_suffix}"
-        if sub_id:
-            sub_id_parts = sub_id.split("_")
-            device_name = f"{device_type} {device_room} {' '.join(sub_id_parts)}".title()
-        else:
-            device_name = f"{device_type} {device_room}".title()
-
-        if sub_id and not sub_id.isdigit():
-            device_type = f"{device_type}:{''.join(filter(str.isalpha, sub_id))}"
-        
-        unique_id = f"{device_id}-{self.get_short_hash(self.hub_id)}"
-
-        if device_id not in self.devices:
-            device_info = DeviceInfo(
-                device_type=device_type,
-                name=device_name,
-                room=device_room,
-                state=state,
-                device_id=device_id,
-            )
-            self.devices[device_id] = DeviceProfile(
-                enqueue_command=self.enqueue_command,
-                domain=DEVICE_PLATFORM_MAP[device_type],
-                unique_id=unique_id,
-                info=device_info,
-            )
-        return self.devices[device_id]
+        return build_device(
+            device_id, sub_id, state,
+            self.get_short_hash(self.hub_id), self.devices, self.enqueue_command,
+        )
 
     def set_device(
         self, device_type: str, device_number: int, unit_id: str | None, status: Any
@@ -464,16 +444,11 @@ class BestinCenterAPI(CenterAPIv2):
         if device_type not in DEVICE_PLATFORM_MAP:
             LOGGER.error(f"Unsupported device type: {device_type}")
             return
-        
+
         device_id = f"{device_type}_{device_number}"
         device = self.initial_device(device_id, unit_id, status)
+        _, device_platform = resolve_device_platform(device_type, unit_id)
 
-        if unit_id and not unit_id.isdigit():
-            format_device = f"{device_type}:{''.join(filter(str.isalpha, unit_id))}"
-            device_platform = DEVICE_PLATFORM_MAP[format_device]
-        else:
-            device_platform = DEVICE_PLATFORM_MAP[device_type]
-        
         device_uid = device.unique_id
         device_info = device.info
         if device_uid not in self.entity_groups.get(device_platform, []):
@@ -642,7 +617,7 @@ class BestinCenterAPI(CenterAPIv2):
                     LOGGER.warning(f"No status info found for {device_type}")
                     return
                 is_common = device_type in ["light", "livinglight", "gas", "doorlock"]
-                parse_func = getattr(self, f"_parse_{device_type}_status", None)
+                parse_func = self._status_parsers.get(device_type)
 
                 for info in status_infos:
                     unit_num = info.attrib["unit_num"][-1]

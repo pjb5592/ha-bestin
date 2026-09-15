@@ -17,12 +17,11 @@ from homeassistant.const import (
     ATTR_TEMPERATURE,
     UnitOfTemperature,
 )
-from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import CONF_VERSION, NEW_CLIMATE
-from .device import BestinDevice
+from .device import BestinDevice, setup_platform_entry
 from .hub import BestinHub
 
 
@@ -32,29 +31,9 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> bool:
     """Setup climate platform."""
-    hub: BestinHub = BestinHub.get_hub(hass, entry)
-    hub.entity_groups[CLIMATE_DOMAIN] = set()
-
-    @callback
-    def async_add_climate(devices=None):
-        if devices is None:
-            devices = hub.api.get_devices_from_domain(CLIMATE_DOMAIN)
-
-        entities = [
-            BestinClimate(device, hub) 
-            for device in devices 
-            if device.unique_id not in hub.entity_groups[CLIMATE_DOMAIN]
-        ]
-
-        if entities:
-            async_add_entities(entities)
-
-    entry.async_on_unload(
-        async_dispatcher_connect(
-            hass, hub.async_signal_new_device(NEW_CLIMATE), async_add_climate
-        )
+    setup_platform_entry(
+        hass, entry, async_add_entities, CLIMATE_DOMAIN, NEW_CLIMATE, BestinClimate
     )
-    async_add_climate()
 
 
 class BestinClimate(BestinDevice, ClimateEntity):

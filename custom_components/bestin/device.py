@@ -4,11 +4,49 @@ from __future__ import annotations
 
 from typing import Any
 
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import Entity, DeviceInfo
-from homeassistant.core import callback
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN, MAIN_DEVICES
+from .hub import BestinHub
 from .until import formatted_name
+
+
+def setup_platform_entry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+    domain: str,
+    signal_key: str,
+    entity_cls: type,
+) -> None:
+    """Shared async_setup_entry boilerplate for BESTIN entity platforms."""
+    hub: BestinHub = BestinHub.get_hub(hass, entry)
+    hub.entity_groups[domain] = set()
+
+    @callback
+    def async_add_platform_entities(devices=None):
+        if devices is None:
+            devices = hub.api.get_devices_from_domain(domain)
+
+        entities = [
+            entity_cls(device, hub)
+            for device in devices
+            if device.unique_id not in hub.entity_groups[domain]
+        ]
+
+        if entities:
+            async_add_entities(entities)
+
+    entry.async_on_unload(
+        async_dispatcher_connect(
+            hass, hub.async_signal_new_device(signal_key), async_add_platform_entities
+        )
+    )
+    async_add_platform_entities()
 
 
 class BestinBase:
