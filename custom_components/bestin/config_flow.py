@@ -149,7 +149,7 @@ class ConfigFlow(ConfigFlow, domain=DOMAIN):
                     LOGGER.info(f"V2 login successful: {resp}")
                     return resp, None
                 elif response.status == 500:
-                    LOGGER.error(f"V2 login failed (500): {resp["err"]}")
+                    LOGGER.error(f"V2 login failed (500): {resp['err']}")
                     return None, ("login_failed", resp["err"])
                 else:
                     LOGGER.error(f"V2 login failed. Status: {response.status}")
@@ -235,7 +235,7 @@ class ConfigFlow(ConfigFlow, domain=DOMAIN):
 
             if error_message:
                 errors["base"] = error_message[0]
-                description_placeholders = {"err": error_message[1]["msg"]}
+                description_placeholders = {"err": error_message[1]}
             else:
                 user_input[CONF_SESSION] = response
                 await self.async_set_unique_id(user_input[CONF_UUID])
