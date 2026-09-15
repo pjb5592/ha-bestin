@@ -84,10 +84,12 @@ class ConfigFlow(ConfigFlow, domain=DOMAIN):
             except asyncio.TimeoutError as ex:
                 LOGGER.error(f"Connection to {host}:{port} failed due to timeout: {ex}")
                 errors["base"] = "connect_failed"
-            else:            
-                await self.async_set_unique_id(user_input[CONF_HOST])
+            else:
+                await self.async_set_unique_id(f"{host}:{port}")
                 self._abort_if_unique_id_configured()
-                return self.async_create_entry(title=user_input[CONF_HOST], data=user_input)
+                return self.async_create_entry(
+                    title=f"{user_input[CONF_HOST]}:{port}", data=user_input
+                )
         
         return self.async_show_form(
             step_id="local",
